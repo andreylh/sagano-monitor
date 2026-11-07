@@ -14,20 +14,22 @@ if (todayJST > LAST_DATE_JST) {
   process.exit(0);
 }
 
-// No Priority header: the ntfy iOS app drops messages that set one.
-async function notify(title, message) {
+// priority: 'low' = quiet status update; 'urgent' = seats found.
+async function notify(title, message, priority = 'low', tags = 'train') {
   if (!TOPIC) { console.log('NTFY_TOPIC not set; skipping push:', title); return; }
   try {
     await fetch(`https://ntfy.sh/${TOPIC}`, {
       method: 'POST',
       body: message,
-      headers: { Title: title, Tags: 'train', Click: URL },
+      headers: { Title: title, Priority: priority, Tags: tags, Click: URL },
     });
   } catch (e) { console.log('ntfy push failed:', e.message); }
 }
 
 // A FAILED run means "19/11 is available": GitHub then emails the repo owner.
 // Read problems (site slow, layout change) only log a warning so they never trigger that email.
+const timeBR = () => new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage({ locale: 'en-US' });
@@ -52,15 +54,17 @@ try {
   const soldOut = result.disabled || /sold-out/.test(result.cls);
   if (soldOut) {
     console.log(`${TARGET_DAY}/11: esgotado`);
+    await notify('Sagano 19/11: esgotado', `Checado às ${timeBR()}. Ainda sem lugares.`, 'low', 'hourglass');
   } else {
     const level = /few/.test(result.cls) ? 'poucos lugares' : /many/.test(result.cls) ? 'muitos lugares' : 'disponível';
     console.log(`${TARGET_DAY}/11: DISPONÍVEL (${level})`);
-    await notify('🚂 Sagano 19/11 DISPONÍVEL!', `Sagano Romantic Train: 19/11 com ${level}. Toque para reservar já!`);
+    await notify('🚂 Sagano 19/11 DISPONÍVEL!', `Sagano Romantic Train: 19/11 com ${level}. Toque para reservar já!`, 'urgent', 'rotating_light,train');
     console.log(`::error::SAGANO 19/11 DISPONIVEL (${level}) - reserve ja: ${URL}`);
     process.exitCode = 1;
   }
 } catch (e) {
   console.log(`::warning::Could not read the calendar: ${e.message}`);
+  await notify('Sagano 19/11: falha na checagem', `Checado às ${timeBR()}. Não consegui ler o calendário; tento de novo na próxima.`, 'low', 'warning');
 } finally {
   await browser.close();
 }
